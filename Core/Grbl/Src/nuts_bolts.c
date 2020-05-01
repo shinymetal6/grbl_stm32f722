@@ -121,7 +121,7 @@ void delay_sec(float seconds, uint8_t mode)
 		  protocol_exec_rt_system();
 		  if (sys.suspend & SUSPEND_RESTART_RETRACT) { return; } // Bail, if safety door reopens.
 		}
-		#ifdef STM32F722xx
+		#ifdef USE_HAL_DRIVER
 		HAL_Delay(DWELL_TIME_STEP); // Delay DWELL_TIME_STEP increment
 		#else
 		_delay_ms(DWELL_TIME_STEP); // Delay DWELL_TIME_STEP increment
@@ -134,7 +134,7 @@ void delay_sec(float seconds, uint8_t mode)
 // which only accepts constants in future compiler releases.
 void delay_ms(uint16_t ms)
 {
-#ifdef STM32F722xx
+#ifdef USE_HAL_DRIVER
 	while ( ms-- ) { HAL_Delay(1); }
 #else
 	while ( ms-- ) { _delay_ms(1); }

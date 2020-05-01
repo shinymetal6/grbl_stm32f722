@@ -55,7 +55,7 @@ extern LARGE_INTEGER Win32Frequency;
 #ifdef STM32F103C8
 #define F_CPU SystemCoreClock
 #endif
-#ifdef STM32F722xx
+#ifdef USE_HAL_DRIVER
 #define F_CPU SystemCoreClock
 #endif
 #define DELAY_MODE_DWELL       0

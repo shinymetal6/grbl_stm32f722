@@ -41,11 +41,11 @@ void SendthreadFunction( void *);
 #include "usb_regs.h"
 #endif
 #endif
-#ifdef STM32F722xx
+#ifdef USE_HAL_DRIVER
 #include "main.h"
 #endif
 
-#if !defined(STM32F103C8) && !defined(STM32F722xx)
+#if !defined(STM32F103C8) && !defined(USE_HAL_DRIVER)
 #define RX_RING_BUFFER (RX_BUFFER_SIZE+1)
 #define TX_RING_BUFFER (TX_BUFFER_SIZE+1)
 #else
@@ -93,7 +93,7 @@ uint8_t serial_get_tx_buffer_count()
 
 void serial_init()
 {
-#ifdef STM32F722xx
+#ifdef USE_HAL_DRIVER
 	__HAL_UART_ENABLE_IT(STM32_USART_HANDLE, UART_IT_RXNE );
 #endif
 #ifdef AVRTARGET 
@@ -186,7 +186,7 @@ void serial_write(uint8_t data) {
   return;
 #endif
 #endif
-#ifdef STM32F722xx
+#ifdef USE_HAL_DRIVER
 #ifndef USEUSB
 	HAL_UART_Transmit(STM32_USART_HANDLE, &data, 1, 0xffffffff);
 	while (!(STM32_USART->ISR & USART_ISR_TXE));		 //�ȴ��������
@@ -343,7 +343,7 @@ void RecvthreadFunction(void *pVoid )
          if (data == 0)
              continue;
 #endif
-#if defined(STM32F103C8) || defined(STM32F722xx)
+#if defined(STM32F103C8) || defined(USE_HAL_DRIVER)
 #ifdef USEUSB
 void OnUsbDataRx(uint8_t* dataIn, uint8_t length)
 {
@@ -356,7 +356,7 @@ void OnUsbDataRx(uint8_t* dataIn, uint8_t length)
 	{
         data = *dataIn ++;
 #else
-#ifdef STM32F722xx
+#ifdef USE_HAL_DRIVER
 /*----------------------------------------------------------------------------
   USART3 IRQ Handler
   Handles USART3 global interrupt request.
@@ -383,7 +383,7 @@ void grbl_USART3_IRQHandler (void)
     {                  // read interrupt
         data = USART1->DR & 0x1FF;
 #endif
-	#if defined(STM32F722xx)
+	#if defined(USE_HAL_DRIVER)
         IIR = STM32_USART->ISR;
         if (IIR & USART_ISR_RXNE)
         {
@@ -453,7 +453,7 @@ void grbl_USART3_IRQHandler (void)
 #endif
    }
 #endif
-#ifdef STM32F722xx
+#ifdef USE_HAL_DRIVER
 #ifndef USEUSB
     STM32_USART->ISR &= ~USART_ISR_RXNE;	          // clear interrupt
 #else

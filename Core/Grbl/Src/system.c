@@ -19,7 +19,7 @@
 */
 
 #include "grbl.h"
-#ifdef STM32F722xx
+#ifdef USE_HAL_DRIVER
 #include "stm32_hal_port.h"
 #endif
 
@@ -84,7 +84,7 @@ uint8_t system_control_get_state()
 #ifdef STM32F103C8
   uint16_t pin= GPIO_ReadInputData(CONTROL_PIN_PORT);
 #endif
-#ifdef STM32F722xx
+#ifdef USE_HAL_DRIVER
   uint16_t pin= GPIO_ReadInputData(CONTROL_PIN_PORT);
 #endif
   #ifdef INVERT_CONTROL_PIN_MASK
@@ -94,7 +94,7 @@ uint8_t system_control_get_state()
     #ifdef ENABLE_SAFETY_DOOR_INPUT_PIN
       if (bit_isfalse(pin,(1<<CONTROL_SAFETY_DOOR_BIT))) { control_state |= CONTROL_PIN_INDEX_SAFETY_DOOR; }
     #endif
-#ifndef STM32F722xx
+#ifndef USE_HAL_DRIVER
     if (bit_isfalse(pin,(1<<CONTROL_RESET_BIT))) { control_state |= CONTROL_PIN_INDEX_RESET; }
     if (bit_isfalse(pin,(1<<CONTROL_FEED_HOLD_BIT))) { control_state |= CONTROL_PIN_INDEX_FEED_HOLD; }
     if (bit_isfalse(pin,(1<<CONTROL_CYCLE_START_BIT))) { control_state |= CONTROL_PIN_INDEX_CYCLE_START; }
@@ -132,14 +132,14 @@ ISR(CONTROL_INT_vect)
   }
 }
 #endif
-#if defined(STM32F103C8) || defined(STM32F722xx)
-#ifdef STM32F722xx
+#if defined(STM32F103C8) || defined(USE_HAL_DRIVER)
+#ifdef USE_HAL_DRIVER
 void grbl_EXTI9_5_IRQHandler(void)
 #else
 void EXTI9_5_IRQHandler(void)
 #endif
 {
-#ifndef STM32F722xx
+#ifndef USE_HAL_DRIVER
     EXTI_ClearITPendingBit((1 << CONTROL_RESET_BIT) | (1 << CONTROL_FEED_HOLD_BIT) | (1 << CONTROL_CYCLE_START_BIT) | (1 << CONTROL_SAFETY_DOOR_BIT));
 #endif
 	uint8_t pin = system_control_get_state();
@@ -454,7 +454,7 @@ void system_set_exec_state_flag(uint8_t mask) {
   sys_rt_exec_state |= (mask);
   LeaveCriticalSection(&CriticalSection);
 #endif
-#if defined(STM32F103C8) || defined(STM32F722xx)
+#if defined(STM32F103C8) || defined(USE_HAL_DRIVER)
   __disable_irq();
   sys_rt_exec_state |= (mask);
   __enable_irq();
@@ -473,7 +473,7 @@ void system_clear_exec_state_flag(uint8_t mask) {
   sys_rt_exec_state &= ~(mask);
   LeaveCriticalSection(&CriticalSection);
 #endif
-#if defined(STM32F103C8) || defined(STM32F722xx)
+#if defined(STM32F103C8) || defined(USE_HAL_DRIVER)
   __disable_irq();
   sys_rt_exec_state &= ~(mask);
   __enable_irq();
@@ -492,7 +492,7 @@ void system_set_exec_alarm(uint8_t code) {
   sys_rt_exec_alarm |= (code);
   LeaveCriticalSection(&CriticalSection);
 #endif
-#if defined(STM32F103C8) || defined(STM32F722xx)
+#if defined(STM32F103C8) || defined(USE_HAL_DRIVER)
   __disable_irq();
   sys_rt_exec_alarm |= (code);
   __enable_irq();
@@ -511,7 +511,7 @@ void system_clear_exec_alarm() {
   sys_rt_exec_alarm = 0;
   LeaveCriticalSection(&CriticalSection);
 #endif
-#if defined(STM32F103C8) || defined(STM32F722xx)
+#if defined(STM32F103C8) || defined(USE_HAL_DRIVER)
   __disable_irq();
   sys_rt_exec_alarm = 0;
   __enable_irq();
@@ -530,7 +530,7 @@ void system_set_exec_motion_override_flag(uint8_t mask) {
   sys_rt_exec_motion_override |= (mask);
   LeaveCriticalSection(&CriticalSection);
 #endif
-#if defined(STM32F103C8) || defined(STM32F722xx)
+#if defined(STM32F103C8) || defined(USE_HAL_DRIVER)
   __disable_irq();
   sys_rt_exec_motion_override |= (mask);
   __enable_irq();
@@ -549,7 +549,7 @@ void system_set_exec_accessory_override_flag(uint8_t mask) {
   sys_rt_exec_accessory_override |= (mask);
   LeaveCriticalSection(&CriticalSection);
 #endif
-#if defined(STM32F103C8) || defined(STM32F722xx)
+#if defined(STM32F103C8) || defined(USE_HAL_DRIVER)
   __disable_irq();
   sys_rt_exec_accessory_override |= (mask);
   __enable_irq();
@@ -568,7 +568,7 @@ void system_clear_exec_motion_overrides() {
   sys_rt_exec_motion_override = 0;
   LeaveCriticalSection(&CriticalSection);
 #endif
-#if defined(STM32F103C8) || defined(STM32F722xx)
+#if defined(STM32F103C8) || defined(USE_HAL_DRIVER)
   __disable_irq();
   sys_rt_exec_motion_override = 0;
   __enable_irq();
@@ -587,7 +587,7 @@ void system_clear_exec_accessory_overrides() {
   sys_rt_exec_accessory_override = 0;
   LeaveCriticalSection(&CriticalSection);
 #endif
-#if defined(STM32F103C8) || defined(STM32F722xx)
+#if defined(STM32F103C8) || defined(USE_HAL_DRIVER)
   __disable_irq();
   sys_rt_exec_accessory_override = 0;
   __enable_irq();

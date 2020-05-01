@@ -87,7 +87,7 @@ void limits_init()
 		limits_disable();
 	}
 #endif
-#ifdef STM32F722xx
+#ifdef USE_HAL_DRIVER
 	/*
 	GPIO_InitTypeDef GPIO_InitStructure;
 	RCC_APB2PeriphClockCmd(RCC_LIMIT_PORT | RCC_APB2Periph_AFIO, ENABLE);
@@ -136,7 +136,7 @@ void limits_disable()
 #ifdef STM32F103C8
   NVIC_DisableIRQ(EXTI15_10_IRQn);
 #endif
-#ifdef STM32F722xx
+#ifdef USE_HAL_DRIVER
   NVIC_DisableIRQ(EXTI15_10_IRQn);
 #endif
 }
@@ -148,11 +148,11 @@ void limits_disable()
 uint8_t limits_get_state()
 {
   uint8_t limit_state = 0;
-#if defined(AVRTARGET) || defined(STM32F103C8)|| defined(STM32F722xx)
+#if defined(AVRTARGET) || defined(STM32F103C8)|| defined(USE_HAL_DRIVER)
 #if defined(AVRTARGET)
   uint8_t pin = (LIMIT_PIN & LIMIT_MASK);
 #endif
-#if defined(STM32F103C8)|| defined(STM32F722xx)
+#if defined(STM32F103C8)|| defined(USE_HAL_DRIVER)
   uint16_t pin = GPIO_ReadInputData(LIMIT_PIN);
 #endif
   #ifdef INVERT_LIMIT_PIN_MASK
@@ -182,18 +182,18 @@ uint8_t limits_get_state()
 // special pinout for an e-stop, but it is generally recommended to just directly connect
 // your e-stop switch to the Arduino reset pin, since it is the most correct way to do this.
 #ifndef ENABLE_SOFTWARE_DEBOUNCE
-#if defined(AVRTARGET) || defined (STM32F103C8) || defined(STM32F722xx)
+#if defined(AVRTARGET) || defined (STM32F103C8) || defined(USE_HAL_DRIVER)
 #if defined(AVRTARGET) 
 ISR(LIMIT_INT_vect) // DEFAULT: Limit pin change interrupt process.
 #endif
 #if defined(STM32F103C8)
 void EXTI15_10_IRQHandler(void)
 #endif
-#if defined(STM32F722xx)
+#if defined(USE_HAL_DRIVER)
 void grbl_EXTI15_10_IRQHandler(void)
 #endif
 {
-#if defined (STM32F722xx)
+#if defined (USE_HAL_DRIVER)
 	if (HAL_NVIC_GetPendingIRQ(X_LIMIT_BIT) != RESET)
 	{
 		HAL_NVIC_ClearPendingIRQ(X_LIMIT_BIT);

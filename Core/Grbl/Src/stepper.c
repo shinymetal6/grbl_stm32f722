@@ -28,7 +28,7 @@ typedef int bool;
 #include "misc.h"
 void TIM_Configuration(TIM_TypeDef* TIMER, u16 Period, u16 Prescaler, u8 PP);
 #endif
-#ifdef STM32F722xx
+#ifdef USE_HAL_DRIVER
 #include "main.h"
 #include "stm32_hal_port.h"
 #endif
@@ -46,7 +46,7 @@ void TIM_Configuration(TIM_TypeDef* TIMER, u16 Period, u16 Prescaler, u8 PP);
 #define PREP_FLAG_HOLD_PARTIAL_BLOCK bit(1)
 #define PREP_FLAG_PARKING bit(2)
 #define PREP_FLAG_DECEL_OVERRIDE bit(3)
-#ifdef STM32F722xx
+#ifdef USE_HAL_DRIVER
 const PORTPINDEF step_pin_mask[N_AXIS] =
 {
 	X_STEP_BIT,
@@ -305,7 +305,7 @@ void st_wake_up()
   st.step_pulse_time = (settings.pulse_microseconds)*TICKS_PER_MICROSECOND;
 #elif defined(STM32F103C8)
   st.step_pulse_time = (settings.pulse_microseconds)*TICKS_PER_MICROSECOND;
-#elif defined(STM32F722xx)
+#elif defined(USE_HAL_DRIVER)
   st.step_pulse_time = (settings.pulse_microseconds)*TICKS_PER_MICROSECOND;
 #endif
   #endif
@@ -330,7 +330,7 @@ void st_wake_up()
   TIM2->EGR = TIM_PSCReloadMode_Immediate;
   NVIC_EnableIRQ(TIM2_IRQn);
 #endif
-#if defined (STM32F722xx)
+#if defined (USE_HAL_DRIVER)
   STEP_PULSE_TIMER->ARR = st.step_pulse_time - 1;
   __HAL_TIM_CLEAR_IT(STEP_PULSE_TIMER_HANDLE,TIM_IT_UPDATE);
 
@@ -358,7 +358,7 @@ void st_go_idle()
 #ifdef STM32F103C8
   NVIC_DisableIRQ(TIM2_IRQn);
 #endif
-#ifdef STM32F722xx
+#ifdef USE_HAL_DRIVER
   NVIC_DisableIRQ(TIM2_IRQn);
 #endif
 
@@ -433,7 +433,7 @@ void st_go_idle()
 // int8 variables and update position counters only when a segment completes. This can get complicated
 // with probing and homing cycles that require true real-time positions.
 
-#ifdef STM32F722xx
+#ifdef USE_HAL_DRIVER
 void grbl_SEGMENT_TIMER_IRQHandler(void)
 #endif
 #ifdef STM32F103C8
@@ -446,7 +446,7 @@ ISR(TIMER1_COMPA_vect)
 void Timer1Proc()
 #endif
 {
-#ifdef STM32F722xx
+#ifdef USE_HAL_DRIVER
 	if ((SEGMENT_TIMER->SR & 0x0001) != 0)                  // check interrupt source
 	{
 		SEGMENT_TIMER->SR &= ~(1 << 0);                          // clear UIF flag
@@ -478,7 +478,7 @@ void Timer1Proc()
   GPIO_Write(DIRECTION_PORT, (GPIO_ReadOutputData(DIRECTION_PORT) & ~DIRECTION_MASK) | (st.dir_outbits & DIRECTION_MASK));
   TIM_ClearITPendingBit(TIM3, TIM_IT_Update);
 #endif
-#ifdef STM32F722xx
+#ifdef USE_HAL_DRIVER
   GPIO_Write(DIRECTION_PORT, (GPIO_ReadOutputData(DIRECTION_PORT) & ~DIRECTION_MASK) | (st.dir_outbits & DIRECTION_MASK));
   __HAL_TIM_CLEAR_IT(STEP_PULSE_TIMER_HANDLE,TIM_IT_UPDATE);
 
@@ -494,7 +494,7 @@ void Timer1Proc()
 #ifdef STM32F103C8
 	GPIO_Write(STEP_PORT, (GPIO_ReadOutputData(STEP_PORT) & ~STEP_MASK) | st.step_outbits);
 #endif
-#ifdef STM32F722xx
+#ifdef USE_HAL_DRIVER
 	GPIO_Write(STEP_PORT, (GPIO_ReadOutputData(STEP_PORT) & ~STEP_MASK) | st.step_outbits);
 #endif
   #endif
@@ -511,7 +511,7 @@ void Timer1Proc()
 #ifdef STM32F103C8
   NVIC_EnableIRQ(TIM3_IRQn);
 #endif
-#ifdef STM32F722xx
+#ifdef USE_HAL_DRIVER
   NVIC_EnableIRQ(TIM3_IRQn);
 #endif
 
@@ -553,7 +553,7 @@ void Timer1Proc()
 	  TIM2->PSC = st.exec_segment->prescaler;
 #endif
 #endif
-#ifdef STM32F722xx
+#ifdef USE_HAL_DRIVER
 	  SEGMENT_TIMER->ARR = st.exec_segment->cycles_per_tick - 1;
 	  /* Set the Autoreload value */
 #ifndef ADAPTIVE_MULTI_AXIS_STEP_SMOOTHING
@@ -610,14 +610,14 @@ void Timer1Proc()
     st.counter_x += st.exec_block->steps[X_AXIS];
   #endif
   if (st.counter_x > st.exec_block->step_event_count) {
-#ifndef STM32F722xx
+#ifndef USE_HAL_DRIVER
     st.step_outbits |= (1<<X_STEP_BIT);
 #else
     st.step_outbits |= X_STEP_BIT;
 #endif
 
     st.counter_x -= st.exec_block->step_event_count;
-#ifndef STM32F722xx
+#ifndef USE_HAL_DRIVER
     if (st.exec_block->direction_bits & (1<<X_DIRECTION_BIT)) { sys_position[X_AXIS]--; }
 #else
     if (st.exec_block->direction_bits & X_DIRECTION_BIT) { sys_position[X_AXIS]--; }
@@ -630,13 +630,13 @@ void Timer1Proc()
     st.counter_y += st.exec_block->steps[Y_AXIS];
   #endif
   if (st.counter_y > st.exec_block->step_event_count) {
-#ifndef STM32F722xx
+#ifndef USE_HAL_DRIVER
     st.step_outbits |= (1<<Y_STEP_BIT);
 #else
     st.step_outbits |= Y_STEP_BIT;
 #endif
     st.counter_y -= st.exec_block->step_event_count;
-#ifndef STM32F722xx
+#ifndef USE_HAL_DRIVER
     if (st.exec_block->direction_bits & (1<<Y_DIRECTION_BIT)) { sys_position[Y_AXIS]--; }
 #else
     if (st.exec_block->direction_bits & Y_DIRECTION_BIT) { sys_position[Y_AXIS]--; }
@@ -649,13 +649,13 @@ void Timer1Proc()
     st.counter_z += st.exec_block->steps[Z_AXIS];
   #endif
   if (st.counter_z > st.exec_block->step_event_count) {
-#ifndef STM32F722xx
+#ifndef USE_HAL_DRIVER
     st.step_outbits |= (1<<Z_STEP_BIT);
 #else
     st.step_outbits |= Z_STEP_BIT;
 #endif
     st.counter_z -= st.exec_block->step_event_count;
-#ifndef STM32F722xx
+#ifndef USE_HAL_DRIVER
     if (st.exec_block->direction_bits & (1<<Z_DIRECTION_BIT)) { sys_position[Z_AXIS]--; }
 #else
     if (st.exec_block->direction_bits & Z_DIRECTION_BIT) { sys_position[Z_AXIS]--; }
@@ -699,7 +699,7 @@ void Timer1Proc()
 // This interrupt is enabled by ISR_TIMER1_COMPAREA when it sets the motor port bits to execute
 // a step. This ISR resets the motor port after a short period (settings.pulse_microseconds)
 // completing one step cycle.
-#ifdef STM32F722xx
+#ifdef USE_HAL_DRIVER
 void grbl_STEP_PULSE_TIMER_IRQHandler(void)
 #endif
 #ifdef STM32F103C8
@@ -712,7 +712,7 @@ ISR(TIMER0_OVF_vect)
 void Timer0Proc()
 #endif
 {
-#ifdef STM32F722xx
+#ifdef USE_HAL_DRIVER
 	if ((STEP_PULSE_TIMER->SR & 0x0001) != 0)                  // check interrupt source
 	{
 		STEP_PULSE_TIMER->SR &= ~(1<<0);                          // clear UIF flag
@@ -793,7 +793,7 @@ void st_reset()
   GPIO_Write(STEP_PORT, (GPIO_ReadOutputData(STEP_PORT) & ~STEP_MASK) | (step_port_invert_mask & STEP_MASK));
   GPIO_Write(DIRECTION_PORT, (GPIO_ReadOutputData(DIRECTION_PORT) & ~DIRECTION_MASK) | (dir_port_invert_mask & DIRECTION_MASK));
 #endif
-#ifdef STM32F722xx
+#ifdef USE_HAL_DRIVER
   GPIO_Write(STEP_PORT, (GPIO_ReadOutputData(STEP_PORT) & ~STEP_MASK) | (step_port_invert_mask & STEP_MASK));
   GPIO_Write(DIRECTION_PORT, (GPIO_ReadOutputData(DIRECTION_PORT) & ~DIRECTION_MASK) | (dir_port_invert_mask & DIRECTION_MASK));
 #endif

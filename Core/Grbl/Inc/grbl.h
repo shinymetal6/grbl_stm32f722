@@ -25,10 +25,10 @@
 #define GRBL_VERSION "1.1f"
 #define GRBL_VERSION_BUILD "20170801"
 
-#if !defined(STM32F103C8) && !defined(WIN32) && !defined(STM32F722xx)
+#if !defined(STM32F103C8) && !defined(WIN32) && !defined(USE_HAL_DRIVER)
 #define AVRTARGET
 #endif
-#ifdef STM32F722xx
+#ifdef USE_HAL_DRIVER
 	#include "main.h"
 #endif
 // Define standard libraries used by Grbl.
@@ -83,7 +83,7 @@ typedef int bool;
 //#define NOEEPROMSUPPORT
 #define printPgmString printString
 #endif
-#ifdef STM32F722xx
+#ifdef USE_HAL_DRIVER
 #include "main.h"
 #define PSTR(x) x
 #define pgm_read_byte_near(x) *(x)
