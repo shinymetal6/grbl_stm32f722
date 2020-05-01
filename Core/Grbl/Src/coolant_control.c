@@ -51,7 +51,7 @@ void coolant_init()
 uint8_t coolant_get_state()
 {
   uint8_t cl_state = COOLANT_STATE_DISABLE;
-#if defined(AVRTARGET) || defined(STM32F103C8)
+#if defined(AVRTARGET) || defined(STM32F103C8)|| defined(USE_HAL_DRIVER)
   #ifdef INVERT_COOLANT_FLOOD_PIN
     if (bit_isfalse(
 #ifdef AVRTARGET
@@ -67,7 +67,7 @@ uint8_t coolant_get_state()
 #else
 		GPIO_ReadOutputData(COOLANT_FLOOD_PORT)
 #endif
-		,(1 << COOLANT_FLOOD_BIT))) {
+		,COOLANT_FLOOD_BIT)) {
   #endif
     cl_state |= COOLANT_STATE_FLOOD;
   }
@@ -101,7 +101,7 @@ uint8_t coolant_get_state()
 // an interrupt-level. No report flag set, but only called by routines that don't need it.
 void coolant_stop()
 {
-#if defined(AVRTARGET) || defined(STM32F103C8)
+#if defined(AVRTARGET) || defined(STM32F103C8)|| defined(USE_HAL_DRIVER)
   #ifdef INVERT_COOLANT_FLOOD_PIN
 #ifdef AVRTARGET
     COOLANT_FLOOD_PORT |= (1 << COOLANT_FLOOD_BIT);
@@ -112,7 +112,7 @@ void coolant_stop()
 #ifdef AVRTARGET
 	COOLANT_FLOOD_PORT &= ~(1 << COOLANT_FLOOD_BIT);
 #else
-	GPIO_ResetBits(COOLANT_FLOOD_PORT,1 << COOLANT_FLOOD_BIT);
+	HAL_GPIO_WritePin(COOLANT_FLOOD_PORT, COOLANT_FLOOD_BIT, GPIO_PIN_RESET);
 #endif
   #endif
   #ifdef ENABLE_M7
@@ -148,7 +148,7 @@ void coolant_set_state(uint8_t mode)
   
   } else {
   
-#if defined(AVRTARGET) || defined(STM32F103C8)
+#if defined(AVRTARGET) || defined(STM32F103C8)|| defined(USE_HAL_DRIVER)
 	  if (mode & COOLANT_FLOOD_ENABLE) {
       #ifdef INVERT_COOLANT_FLOOD_PIN
 #ifdef AVRTARGET
@@ -160,7 +160,11 @@ void coolant_set_state(uint8_t mode)
 #ifdef AVRTARGET
 		COOLANT_FLOOD_PORT |= (1 << COOLANT_FLOOD_BIT);
 #else
+	#if defined(USE_HAL_DRIVER)
+		HAL_GPIO_WritePin(COOLANT_FLOOD_PORT, COOLANT_FLOOD_BIT, GPIO_PIN_SET);
+	#else
 		GPIO_SetBits(COOLANT_FLOOD_PORT,1 << COOLANT_FLOOD_BIT);
+	#endif
 #endif
       #endif
     }
