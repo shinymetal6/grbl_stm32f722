@@ -356,6 +356,8 @@ void grbl_STEP_PULSE_TIMER_IRQHandler(void)
 #endif
 #ifdef USE_HAL_DRIVER
   GPIO_Write(DIRECTION_PORT, (GPIO_ReadOutputData(DIRECTION_PORT) & ~DIRECTION_MASK) | (st.dir_outbits & DIRECTION_MASK));
+  __HAL_TIM_CLEAR_FLAG(WIDTH_TIMER_HANDLE, TIM_IT_UPDATE);
+
 #endif
 
   // Then pulse the stepping pins
