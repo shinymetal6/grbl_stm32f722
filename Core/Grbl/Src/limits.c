@@ -147,6 +147,7 @@ void limits_disable()
 // number in bit position, i.e. Z_AXIS is (1<<2) or bit 2, and Y_AXIS is (1<<1) or bit 1.
 uint8_t limits_get_state()
 {
+	/*
   uint8_t limit_state = 0;
 #if defined(AVRTARGET) || defined(STM32F103C8)|| defined(USE_HAL_DRIVER)
 #if defined(AVRTARGET)
@@ -158,15 +159,31 @@ uint8_t limits_get_state()
   #ifdef INVERT_LIMIT_PIN_MASK
     pin ^= INVERT_LIMIT_PIN_MASK;
   #endif
-  if (bit_isfalse(settings.flags,BITFLAG_INVERT_LIMIT_PINS)) { pin ^= LIMIT_MASK; }
-  if (pin) {
+  if (bit_isfalse(settings.flags,BITFLAG_INVERT_LIMIT_PINS))
+  {
+	  pin ^= LIMIT_MASK;
+  }
+  if (pin)
+  {
     uint8_t idx;
-    for (idx=0; idx<N_AXIS; idx++) {
-      if (pin & limit_pin_mask[idx]) { limit_state |= (1 << idx); }
+    for (idx=0; idx<N_AXIS; idx++)
+    {
+      if (pin & limit_pin_mask[idx])
+      {
+    	  limit_state |= (1 << idx);
+      }
     }
   }
 #endif
   return(limit_state);
+  */
+uint8_t limit_state = 0;
+/*
+	limit_state |= GPIO_ReadInputBit(LIMIT_PORT, X_LIMIT_BIT);
+	limit_state |= (GPIO_ReadInputBit(LIMIT_PORT, Y_LIMIT_BIT) << 1);
+	limit_state |= (GPIO_ReadInputBit(LIMIT_PORT, Z_LIMIT_BIT) << 2);
+	*/
+	return(limit_state);
 }
 
 

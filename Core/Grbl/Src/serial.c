@@ -393,8 +393,11 @@ void grbl_USART3_IRQHandler (void)
 #endif
   // Pick off realtime command characters directly from the serial stream. These characters are
   // not passed into the main buffer, but these set system state flag bits for realtime execution.
+  Led1On();
   switch (data) {
-    case CMD_RESET:         mc_reset(); break; // Call motion control reset routine.
+    case CMD_RESET:
+    						mc_reset();
+    						break; // Call motion control reset routine.
     case CMD_STATUS_REPORT: system_set_exec_state_flag(EXEC_STATUS_REPORT); break; // Set as true
     case CMD_CYCLE_START:   system_set_exec_state_flag(EXEC_CYCLE_START); break; // Set as true
     case CMD_FEED_HOLD:     system_set_exec_state_flag(EXEC_FEED_HOLD); break; // Set as true
@@ -455,10 +458,11 @@ void grbl_USART3_IRQHandler (void)
 #endif
 #ifdef USE_HAL_DRIVER
 #ifndef USEUSB
-    STM32_USART->ISR &= ~USART_ISR_RXNE;	          // clear interrupt
+    //STM32_USART->ISR &= ~USART_ISR_RXNE;	          // clear interrupt
 #else
     length--;
 #endif
+	Led1Off();
    }
 #endif
 }

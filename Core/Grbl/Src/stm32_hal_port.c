@@ -35,6 +35,23 @@ uint16_t	GPIO_ReadInputData(GPIO_TypeDef* GPIOx )
 	return GPIOx->IDR;
 }
 
+uint16_t	GPIO_ReadInputBit(GPIO_TypeDef* GPIOx, uint16_t bit)
+{
+	if (( GPIOx->IDR & bit) != 0)
+		return 1;
+	return 0;
+}
+
+void Led1On(void)
+{
+	HAL_GPIO_WritePin(LD1_GPIO_Port, LD1_Pin,GPIO_PIN_SET);
+}
+
+void Led1Off(void)
+{
+	HAL_GPIO_WritePin(LD1_GPIO_Port, LD1_Pin,GPIO_PIN_RESET);
+}
+
 uint32_t grbl_start(void)
 {
 	// Initialize system upon power-up.

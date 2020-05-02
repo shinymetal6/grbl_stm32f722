@@ -14,8 +14,10 @@
 #define	STM32_USART_HANDLE			&huart3
 #define	STEP_PULSE_TIMER			TIM6
 #define	STEP_PULSE_TIMER_HANDLE		&htim6
-#define	SEGMENT_TIMER				TIM7
-#define	SEGMENT_TIMER_HANDLE		&htim7
+#define	WIDTH_TIMER					TIM7
+#define	WIDTH_TIMER_HANDLE			&htim7
+#define	STEP_PULSE_IRQ				TIM6_DAC_IRQn
+#define	WIDTH_IRQ					TIM7_IRQn
 
 // Define step pulse output pins. NOTE: All step bit pins must be on the same port.
 #define STEP_PORT       X_STEP_BIT_GPIO_Port

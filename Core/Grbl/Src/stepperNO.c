@@ -20,8 +20,6 @@
 */
 
 #include "grbl.h"
-
-
 #include "main.h"
 #include "stm32_hal_port.h"
 
@@ -37,6 +35,7 @@
 #define PREP_FLAG_HOLD_PARTIAL_BLOCK bit(1)
 #define PREP_FLAG_PARKING bit(2)
 #define PREP_FLAG_DECEL_OVERRIDE bit(3)
+
 const PORTPINDEF step_pin_mask[N_AXIS] =
 {
 	X_STEP_BIT,
@@ -125,7 +124,6 @@ typedef struct {
 
   uint8_t execute_step;     // Flags step execution for each interrupt.
   uint8_t step_pulse_time;  // Step pulse reset time after step rise
-
   PORTPINDEF step_outbits;         // The next stepping-bits to be output
   PORTPINDEF dir_outbits;
   #ifdef ADAPTIVE_MULTI_AXIS_STEP_SMOOTHING
@@ -255,17 +253,17 @@ void st_wake_up()
     OCR0A = -(((settings.pulse_microseconds)*TICKS_PER_MICROSECOND) >> 3);
   #else // Normal operation
     // Set step pulse time. Ad hoc computation from oscilloscope. Uses two's complement.
-
   st.step_pulse_time = (settings.pulse_microseconds)*TICKS_PER_MICROSECOND;
   #endif
+
   // Enable Stepper Driver Interrupt
-  STEP_PULSE_TIMER->ARR = st.step_pulse_time - 1;
-  WIDTH_TIMER->ARR 		= st.exec_segment->cycles_per_tick - 1;
+  //STEP_PULSE_TIMER->ARR = st.step_pulse_time - 1;
+  STEP_PULSE_TIMER->ARR = st.exec_segment->cycles_per_tick - 1;
   /* Set the Autoreload value */
 #ifndef ADAPTIVE_MULTI_AXIS_STEP_SMOOTHING
   WIDTH_TIMER->PSC = st.exec_segment->prescaler;
 #endif
-  NVIC_EnableIRQ(WIDTH_IRQ);
+  NVIC_EnableIRQ(STEP_PULSE_IRQ);
 }
 
 
@@ -273,8 +271,8 @@ void st_wake_up()
 void st_go_idle()
 {
   // Disable Stepper Driver Interrupt. Allow Stepper Port Reset Interrupt to finish, if active.
-  NVIC_DisableIRQ(STEP_PULSE_IRQ);
 
+  NVIC_DisableIRQ(STEP_PULSE_IRQ);
   busy = false;
 
   // Set stepper driver idle state, disabled or enabled, depending on settings and circumstances.
@@ -345,59 +343,52 @@ void st_go_idle()
 // TODO: Replace direct updating of the int32 position counters in the ISR somehow. Perhaps use smaller
 // int8 variables and update position counters only when a segment completes. This can get complicated
 // with probing and homing cycles that require true real-time positions.
-
+uint32_t irqs_step = 0;
 void grbl_STEP_PULSE_TIMER_IRQHandler(void)
 {
-  if (busy) { return; } // The busy-flag is used to avoid reentering this interrupt
+	if (busy)
+		return; // The busy-flag is used to avoid reentering this interrupt
+	irqs_step++;
+	// Set direction pins
+	if (( st.dir_outbits & X_DIRECTION_BIT ) == X_DIRECTION_BIT)
+		DIRECTION_PORT->BSRR = X_DIRECTION_BIT;
+	else
+		DIRECTION_PORT->BSRR = (uint32_t)X_DIRECTION_BIT << 16;
+	if (( st.dir_outbits & Y_DIRECTION_BIT ) == Y_DIRECTION_BIT)
+		DIRECTION_PORT->BSRR = Y_DIRECTION_BIT;
+	else
+		DIRECTION_PORT->BSRR = (uint32_t)Y_DIRECTION_BIT << 16;
+	if (( st.dir_outbits & Z_DIRECTION_BIT ) == Z_DIRECTION_BIT)
+		DIRECTION_PORT->BSRR = Z_DIRECTION_BIT;
+	else
+		DIRECTION_PORT->BSRR = (uint32_t)Z_DIRECTION_BIT << 16;
 
-#ifdef STM32F103C8
-  GPIO_Write(DIRECTION_PORT, (GPIO_ReadOutputData(DIRECTION_PORT) & ~DIRECTION_MASK) | (st.dir_outbits & DIRECTION_MASK));
-  TIM_ClearITPendingBit(TIM3, TIM_IT_Update);
-#endif
-#ifdef USE_HAL_DRIVER
-  GPIO_Write(DIRECTION_PORT, (GPIO_ReadOutputData(DIRECTION_PORT) & ~DIRECTION_MASK) | (st.dir_outbits & DIRECTION_MASK));
-#endif
-
-  // Then pulse the stepping pins
-  #ifdef STEP_PULSE_DELAY
-    st.step_bits = (STEP_PORT & ~STEP_MASK) | st.step_outbits; // Store out_bits to prevent overwriting.
-  #else  // Normal operation
-#ifdef AVRTARGET
-    STEP_PORT = (STEP_PORT & ~STEP_MASK) | st.step_outbits;
-#endif
-#ifdef STM32F103C8
-	GPIO_Write(STEP_PORT, (GPIO_ReadOutputData(STEP_PORT) & ~STEP_MASK) | st.step_outbits);
-#endif
-#ifdef USE_HAL_DRIVER
-	GPIO_Write(STEP_PORT, (GPIO_ReadOutputData(STEP_PORT) & ~STEP_MASK) | st.step_outbits);
-#endif
-  #endif
-
-  // Enable step pulse reset timer so that The Stepper Port Reset Interrupt can reset the signal after
-  // exactly settings.pulse_microseconds microseconds, independent of the main Timer1 prescaler.
-#ifdef USE_HAL_DRIVER
-  NVIC_EnableIRQ(WIDTH_IRQ);
-#endif
+	// Then pulse the stepping pins
+	if (( st.step_outbits & X_STEP_BIT ) == X_STEP_BIT)
+		STEP_PORT->BSRR = X_STEP_BIT;
+	if (( st.step_outbits & Y_STEP_BIT ) == Y_STEP_BIT)
+		STEP_PORT->BSRR = Y_STEP_BIT;
+	if (( st.step_outbits & Z_STEP_BIT ) == Z_STEP_BIT)
+		STEP_PORT->BSRR = Z_STEP_BIT;
 
   busy = true;
   // If there is no step segment, attempt to pop one from the stepper buffer
-  if (st.exec_segment == NULL) {
+  if (st.exec_segment == NULL)
+  {
     // Anything in the buffer? If so, load and initialize next step segment.
-    if (segment_buffer_head != segment_buffer_tail) {
+    if (segment_buffer_head != segment_buffer_tail)
+    {
       // Initialize new step segment and load number of steps to execute
       st.exec_segment = &segment_buffer[segment_buffer_tail];
 
       // Initialize step segment timing per step and load number of steps to execute.
-
-	  WIDTH_TIMER->ARR = st.exec_segment->cycles_per_tick - 1;
 	  /* Set the Autoreload value */
-#ifndef ADAPTIVE_MULTI_AXIS_STEP_SMOOTHING
-	  WIDTH_TIMER->PSC = st.exec_segment->prescaler;
-#endif
+	  STEP_PULSE_TIMER->ARR = st.exec_segment->cycles_per_tick - 1;
       st.step_count = st.exec_segment->n_step; // NOTE: Can sometimes be zero when moving slow.
       // If the new segment starts a new planner block, initialize stepper variables and counters.
       // NOTE: When the segment data index changes, this indicates a new planner block.
-      if ( st.exec_block_index != st.exec_segment->st_block_index ) {
+      if ( st.exec_block_index != st.exec_segment->st_block_index )
+      {
         st.exec_block_index = st.exec_segment->st_block_index;
         st.exec_block = &st_block_buffer[st.exec_block_index];
 
@@ -418,7 +409,9 @@ void grbl_STEP_PULSE_TIMER_IRQHandler(void)
         spindle_set_speed(st.exec_segment->spindle_pwm);
       #endif
 
-    } else {
+    }
+    else
+    {
       // Segment buffer empty. Shutdown.
       st_go_idle();
       // Ensure pwm is set properly upon completion of rate-controlled motion.
@@ -429,7 +422,6 @@ void grbl_STEP_PULSE_TIMER_IRQHandler(void)
       return; // Nothing to do but exit.
     }
   }
-
 
   // Check probing state.
   if (sys_probe_state == PROBE_ACTIVE) { probe_state_monitor(); }
@@ -443,18 +435,12 @@ void grbl_STEP_PULSE_TIMER_IRQHandler(void)
   #else
     st.counter_x += st.exec_block->steps[X_AXIS];
   #endif
-  if (st.counter_x > st.exec_block->step_event_count)
-  {
+  if (st.counter_x > st.exec_block->step_event_count) {
     st.step_outbits |= X_STEP_BIT;
+
     st.counter_x -= st.exec_block->step_event_count;
-    if (st.exec_block->direction_bits & X_DIRECTION_BIT)
-    {
-    	sys_position[X_AXIS]--;
-    }
-    else
-    {
-    	sys_position[X_AXIS]++;
-    }
+    if (st.exec_block->direction_bits & X_DIRECTION_BIT) { sys_position[X_AXIS]--; }
+    else { sys_position[X_AXIS]++; }
   }
   #ifdef ADAPTIVE_MULTI_AXIS_STEP_SMOOTHING
     st.counter_y += st.steps[Y_AXIS];
@@ -472,18 +458,11 @@ void grbl_STEP_PULSE_TIMER_IRQHandler(void)
   #else
     st.counter_z += st.exec_block->steps[Z_AXIS];
   #endif
-  if (st.counter_z > st.exec_block->step_event_count)
-  {
+  if (st.counter_z > st.exec_block->step_event_count) {
     st.step_outbits |= Z_STEP_BIT;
     st.counter_z -= st.exec_block->step_event_count;
-    if (st.exec_block->direction_bits & Z_DIRECTION_BIT)
-    {
-    	sys_position[Z_AXIS]--;
-    }
-    else
-    {
-    	sys_position[Z_AXIS]++;
-    }
+    if (st.exec_block->direction_bits & Z_DIRECTION_BIT) { sys_position[Z_AXIS]--; }
+    else { sys_position[Z_AXIS]++; }
   }
 
   // During a homing cycle, lock out and prevent desired axes from moving.
@@ -493,86 +472,20 @@ void grbl_STEP_PULSE_TIMER_IRQHandler(void)
   if (st.step_count == 0) {
     // Segment is complete. Discard current segment and advance segment indexing.
     st.exec_segment = NULL;
-#ifndef WIN32
 	uint8_t segment_tail_next = segment_buffer_tail + 1;
 	if (segment_tail_next == SEGMENT_BUFFER_SIZE)
 		segment_tail_next = 0;
 	segment_buffer_tail = segment_tail_next;
-#else
-    if ( ++segment_buffer_tail == SEGMENT_BUFFER_SIZE) 
-	{ 
-		segment_buffer_tail = 0; 
-	}
-#endif
   }
 
-  st.step_outbits ^= step_port_invert_mask;  // Apply step port invert mask
+  //st.step_outbits ^= step_port_invert_mask;  // Apply step port invert mask
   busy = false;
+/* step bits down */
+	STEP_PORT->BSRR = (uint32_t)Z_STEP_BIT << 16;
+  	STEP_PORT->BSRR = (uint32_t)Y_STEP_BIT << 16;
+  	STEP_PORT->BSRR = (uint32_t)Z_STEP_BIT << 16;
 }
 
-
-/* The Stepper Port Reset Interrupt: Timer0 OVF interrupt handles the falling edge of the step
-   pulse. This should always trigger before the next Timer1 COMPA interrupt and independently
-   finish, if Timer1 is disabled after completing a move.
-   NOTE: Interrupt collisions between the serial and stepper interrupts can cause delays by
-   a few microseconds, if they execute right before one another. Not a big deal, but can
-   cause issues at high step rates if another high frequency asynchronous interrupt is
-   added to Grbl.
-*/
-// This interrupt is enabled by ISR_TIMER1_COMPAREA when it sets the motor port bits to execute
-// a step. This ISR resets the motor port after a short period (settings.pulse_microseconds)
-// completing one step cycle.
-#ifdef USE_HAL_DRIVER
-void grbl_Width_TIMER_IRQHandler(void)
-#endif
-#ifdef STM32F103C8
-void TIM3_IRQHandler(void)
-#endif
-#ifdef AVRTARGET
-ISR(TIMER0_OVF_vect)
-#endif
-#ifdef WIN32
-void Timer0Proc()
-#endif
-{
-#ifdef USE_HAL_DRIVER
-	if ((WIDTH_TIMER->SR & 0x0001) != 0)                  // check interrupt source
-	{
-		WIDTH_TIMER->SR &= ~(1<<0);                          // clear UIF flag
-		WIDTH_TIMER->CNT = 0;
-		NVIC_DisableIRQ(WIDTH_IRQ);
-		GPIO_Write(STEP_PORT, (GPIO_ReadOutputData(STEP_PORT) & ~STEP_MASK) | (step_port_invert_mask & STEP_MASK));
-	}
-#endif
-#ifdef STM32F103C8
-	if ((TIM3->SR & 0x0001) != 0)                  // check interrupt source
-	{
-		TIM3->SR &= ~(1<<0);                          // clear UIF flag
-		TIM3->CNT = 0;
-		NVIC_DisableIRQ(TIM3_IRQn);
-		GPIO_Write(STEP_PORT, (GPIO_ReadOutputData(STEP_PORT) & ~STEP_MASK) | (step_port_invert_mask & STEP_MASK));
-	}
-#endif
-#ifdef AVRTARGET
-  // Reset stepping pins (leave the direction pins)
-  STEP_PORT = (STEP_PORT & ~STEP_MASK) | (step_port_invert_mask & STEP_MASK);
-  TCCR0B = 0; // Disable Timer0 to prevent re-entering this interrupt when it's not needed.
-#endif
-#ifdef WIN32
-  nTimer0Out = 0;
-#endif
-}
-#ifdef STEP_PULSE_DELAY
-  // This interrupt is used only when STEP_PULSE_DELAY is enabled. Here, the step pulse is
-  // initiated after the STEP_PULSE_DELAY time period has elapsed. The ISR TIMER2_OVF interrupt
-  // will then trigger after the appropriate settings.pulse_microseconds, as in normal operation.
-  // The new timing between direction, step pulse, and step complete events are setup in the
-  // st_wake_up() routine.
-  ISR(TIMER0_COMPA_vect)
-  {
-    STEP_PORT = st.step_bits; // Begin step pulse.
-  }
-#endif
 
 
 // Generates the step and direction port invert masks used in the Stepper Interrupt Driver.
@@ -608,116 +521,18 @@ void st_reset()
   st.dir_outbits = dir_port_invert_mask; // Initialize direction bits to default.
 
   // Initialize step and direction port pins.
-#ifdef AVRTARGET
-  STEP_PORT = (STEP_PORT & ~STEP_MASK) | step_port_invert_mask;
-  DIRECTION_PORT = (DIRECTION_PORT & ~DIRECTION_MASK) | dir_port_invert_mask;
-#endif
-#ifdef STM32F103C8
   GPIO_Write(STEP_PORT, (GPIO_ReadOutputData(STEP_PORT) & ~STEP_MASK) | (step_port_invert_mask & STEP_MASK));
   GPIO_Write(DIRECTION_PORT, (GPIO_ReadOutputData(DIRECTION_PORT) & ~DIRECTION_MASK) | (dir_port_invert_mask & DIRECTION_MASK));
-#endif
-#ifdef USE_HAL_DRIVER
-  GPIO_Write(STEP_PORT, (GPIO_ReadOutputData(STEP_PORT) & ~STEP_MASK) | (step_port_invert_mask & STEP_MASK));
-  GPIO_Write(DIRECTION_PORT, (GPIO_ReadOutputData(DIRECTION_PORT) & ~DIRECTION_MASK) | (dir_port_invert_mask & DIRECTION_MASK));
-#endif
 }
 
-#ifdef WIN32
-void Timer1Thread(void *pVoid)
-{
-	LARGE_INTEGER StartingTime, EndingTime, ElapsedMicroseconds;
-
-	for (;;)
-	{
-		while (nTimer1Out == 0)
-			Sleep(0);
-		QueryPerformanceCounter(&StartingTime);
-		do
-		{
-			QueryPerformanceCounter(&EndingTime);
-			ElapsedMicroseconds.QuadPart = EndingTime.QuadPart - StartingTime.QuadPart;
-		} while (ElapsedMicroseconds.QuadPart < nTimer1Out);
-		Timer1Proc();
-	}
-}
-
-void Timer0Thread(void *pVoid)
-{
-	LARGE_INTEGER StartingTime, EndingTime, ElapsedMicroseconds;
-
-	for (;;)
-	{
-		while (nTimer0Out == 0)
-			Sleep(0);
-		QueryPerformanceCounter(&StartingTime);
-		do
-		{
-			QueryPerformanceCounter(&EndingTime);
-			ElapsedMicroseconds.QuadPart = EndingTime.QuadPart - StartingTime.QuadPart;
-		} while (ElapsedMicroseconds.QuadPart < nTimer0Out);
-		Timer0Proc();
-	}
-}
-
-#endif
 
 // Initialize and start the stepper motor subsystem
 void stepper_init()
 {
   // Configure step and direction interface pins
-#ifdef STM32F103C8
-	GPIO_InitTypeDef GPIO_InitStructure;
-	RCC_APB2PeriphClockCmd(RCC_STEPPERS_DISABLE_PORT, ENABLE);
-	GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
-	GPIO_InitStructure.GPIO_Mode = GPIO_Mode_Out_PP;
-	GPIO_InitStructure.GPIO_Pin = STEPPERS_DISABLE_MASK;
-	GPIO_Init(STEPPERS_DISABLE_PORT, &GPIO_InitStructure);
-
-	RCC_APB2PeriphClockCmd(RCC_STEP_PORT, ENABLE);
-	GPIO_InitStructure.GPIO_Pin = STEP_MASK;
-	GPIO_Init(STEP_PORT, &GPIO_InitStructure);
-
-	RCC_APB2PeriphClockCmd(RCC_DIRECTION_PORT, ENABLE);
-	GPIO_InitStructure.GPIO_Pin = DIRECTION_MASK;
-	GPIO_Init(DIRECTION_PORT, &GPIO_InitStructure);
-
-	RCC->APB1ENR |= RCC_APB1Periph_TIM2;
-	TIM_Configuration(TIM2, 1, 1, 1);
-	RCC->APB1ENR |= RCC_APB1Periph_TIM3;
-	TIM_Configuration(TIM3, 1, 1, 1);
-	NVIC_DisableIRQ(TIM3_IRQn);
-	NVIC_DisableIRQ(TIM2_IRQn);
-#endif
-#ifdef AVRTARGET
-  STEP_DDR |= STEP_MASK;
-  STEPPERS_DISABLE_DDR |= 1<<STEPPERS_DISABLE_BIT;
-  DIRECTION_DDR |= DIRECTION_MASK;
-
-  // Configure Timer 1: Stepper Driver Interrupt
-  TCCR1B &= ~(1<<WGM13); // waveform generation = 0100 = CTC
-  TCCR1B |=  (1<<WGM12);
-  TCCR1A &= ~((1<<WGM11) | (1<<WGM10));
-  TCCR1A &= ~((1<<COM1A1) | (1<<COM1A0) | (1<<COM1B1) | (1<<COM1B0)); // Disconnect OC1 output
-  // TCCR1B = (TCCR1B & ~((1<<CS12) | (1<<CS11))) | (1<<CS10); // Set in st_go_idle().
-  // TIMSK1 &= ~(1<<OCIE1A);  // Set in st_go_idle().
-
-  // Configure Timer 0: Stepper Port Reset Interrupt
-  TIMSK0 &= ~((1<<OCIE0B) | (1<<OCIE0A) | (1<<TOIE0)); // Disconnect OC0 outputs and OVF interrupt.
-  TCCR0A = 0; // Normal operation
-  TCCR0B = 0; // Disable Timer0 until needed
-  TIMSK0 |= (1<<TOIE0); // Enable Timer0 overflow interrupt
-  #ifdef STEP_PULSE_DELAY
-    TIMSK0 |= (1<<OCIE0A); // Enable Timer0 Compare Match A interrupt
-  #endif
-#endif
-#ifdef WIN32
-	QueryPerformanceFrequency(&Win32Frequency);
-
-	_beginthread(Timer1Thread, 0, NULL);
-	_beginthread(Timer0Thread, 0, NULL);
-#endif
+	  HAL_TIM_Base_Start_IT(STEP_PULSE_TIMER_HANDLE);
+	  NVIC_DisableIRQ(STEP_PULSE_IRQ);
 }
-
 
 // Called by planner_recalculate() when the executing block is updated by the new plan.
 void st_update_plan_block_parameters()

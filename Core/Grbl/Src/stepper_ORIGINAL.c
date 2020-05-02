@@ -21,9 +21,18 @@
 
 #include "grbl.h"
 
-
+#ifdef STM32F103C8
+typedef int bool;
+#include "stm32f10x_rcc.h"
+#include "stm32f10x_tim.h"
+#include "misc.h"
+void TIM_Configuration(TIM_TypeDef* TIMER, u16 Period, u16 Prescaler, u8 PP);
+#endif
+#ifdef USE_HAL_DRIVER
 #include "main.h"
 #include "stm32_hal_port.h"
+#endif
+
 
 // Some useful constants.
 #define DT_SEGMENT (1.0f/(ACCELERATION_TICKS_PER_SECOND*60.0f)) // min/segment
@@ -37,6 +46,7 @@
 #define PREP_FLAG_HOLD_PARTIAL_BLOCK bit(1)
 #define PREP_FLAG_PARKING bit(2)
 #define PREP_FLAG_DECEL_OVERRIDE bit(3)
+#ifdef USE_HAL_DRIVER
 const PORTPINDEF step_pin_mask[N_AXIS] =
 {
 	X_STEP_BIT,
@@ -56,7 +66,27 @@ const PORTPINDEF limit_pin_mask[N_AXIS] =
 	Y_LIMIT_BIT,
 	Z_LIMIT_BIT,
 };
+#else
+const PORTPINDEF step_pin_mask[N_AXIS] =
+{
+	1 << X_STEP_BIT,
+	1 << Y_STEP_BIT,
+	1 << Z_STEP_BIT,
 
+};
+const PORTPINDEF direction_pin_mask[N_AXIS] =
+{
+	1 << X_DIRECTION_BIT,
+	1 << Y_DIRECTION_BIT,
+	1 << Z_DIRECTION_BIT,
+};
+const PORTPINDEF limit_pin_mask[N_AXIS] =
+{
+	1 << X_LIMIT_BIT,
+	1 << Y_LIMIT_BIT,
+	1 << Z_LIMIT_BIT,
+};
+#endif
 // Define Adaptive Multi-Axis Step-Smoothing(AMASS) levels and cutoff frequencies. The highest level
 // frequency bin starts at 0Hz and ends at its cutoff frequency. The next lower level frequency bin
 // starts at the next higher cutoff frequency, and so on. The cutoff frequencies for each level must
@@ -77,6 +107,17 @@ const PORTPINDEF limit_pin_mask[N_AXIS] =
     error "AMASS must have 1 or more levels to operate correctly."
   #endif
 #endif
+#ifdef WIN32
+#include <process.h> 
+unsigned char PORTB = 0;
+unsigned char DDRD = 0;
+unsigned char DDRB = 0;
+unsigned char PORTD = 0;
+LARGE_INTEGER Win32Frequency;
+LONGLONG nTimer1Out = 0;
+LONGLONG nTimer0Out = 0;
+#endif
+
 
 // Stores the planner block Bresenham algorithm execution data for the segments in the segment
 // buffer. Normally, this buffer is partially in-use, but, for the worst case scenario, it will
@@ -124,8 +165,11 @@ typedef struct {
   #endif
 
   uint8_t execute_step;     // Flags step execution for each interrupt.
+#ifndef WIN32
   uint8_t step_pulse_time;  // Step pulse reset time after step rise
-
+#else
+  LONGLONG step_pulse_time;
+#endif
   PORTPINDEF step_outbits;         // The next stepping-bits to be output
   PORTPINDEF dir_outbits;
   #ifdef ADAPTIVE_MULTI_AXIS_STEP_SMOOTHING
@@ -255,17 +299,48 @@ void st_wake_up()
     OCR0A = -(((settings.pulse_microseconds)*TICKS_PER_MICROSECOND) >> 3);
   #else // Normal operation
     // Set step pulse time. Ad hoc computation from oscilloscope. Uses two's complement.
-
+#ifdef AVRTARGET
+  st.step_pulse_time = -(((settings.pulse_microseconds - 2)*TICKS_PER_MICROSECOND) >> 3);
+#elif defined (WIN32)
   st.step_pulse_time = (settings.pulse_microseconds)*TICKS_PER_MICROSECOND;
+#elif defined(STM32F103C8)
+  st.step_pulse_time = (settings.pulse_microseconds)*TICKS_PER_MICROSECOND;
+#elif defined(USE_HAL_DRIVER)
+  st.step_pulse_time = (settings.pulse_microseconds)*TICKS_PER_MICROSECOND;
+#endif
   #endif
+
   // Enable Stepper Driver Interrupt
+#ifdef AVRTARGET
+  TIMSK1 |= (1<<OCIE1A);
+#endif
+#ifdef WIN32
+  nTimer1Out = 1;
+#endif
+#if defined (STM32F103C8)
+  TIM3->ARR = st.step_pulse_time - 1;
+  TIM3->EGR = TIM_PSCReloadMode_Immediate;
+  TIM_ClearITPendingBit(TIM3, TIM_IT_Update);
+
+  TIM2->ARR = st.exec_segment->cycles_per_tick - 1;
+  /* Set the Autoreload value */
+#ifndef ADAPTIVE_MULTI_AXIS_STEP_SMOOTHING        
+  TIM2->PSC = st.exec_segment->prescaler;
+#endif
+  TIM2->EGR = TIM_PSCReloadMode_Immediate;
+  NVIC_EnableIRQ(TIM2_IRQn);
+#endif
+#if defined (USE_HAL_DRIVER)
   STEP_PULSE_TIMER->ARR = st.step_pulse_time - 1;
-  WIDTH_TIMER->ARR 		= st.exec_segment->cycles_per_tick - 1;
+  __HAL_TIM_CLEAR_IT(STEP_PULSE_TIMER_HANDLE,TIM_IT_UPDATE);
+  WIDTH_TIMER->ARR = st.exec_segment->cycles_per_tick - 1;
   /* Set the Autoreload value */
 #ifndef ADAPTIVE_MULTI_AXIS_STEP_SMOOTHING
   WIDTH_TIMER->PSC = st.exec_segment->prescaler;
 #endif
-  NVIC_EnableIRQ(WIDTH_IRQ);
+  //NVIC_EnableIRQ(STEP_PULSE_IRQ);
+  HAL_TIM_Base_Start_IT(WIDTH_TIMER_HANDLE);
+#endif
 }
 
 
@@ -273,7 +348,19 @@ void st_wake_up()
 void st_go_idle()
 {
   // Disable Stepper Driver Interrupt. Allow Stepper Port Reset Interrupt to finish, if active.
+#ifdef AVRTARGET
+  TIMSK1 &= ~(1<<OCIE1A); // Disable Timer1 interrupt
+  TCCR1B = (TCCR1B & ~((1<<CS12) | (1<<CS11))) | (1<<CS10); // Reset clock to no prescaling.
+#endif
+#ifdef WIN32
+  nTimer1Out = 0;
+#endif
+#ifdef STM32F103C8
+  NVIC_DisableIRQ(TIM2_IRQn);
+#endif
+#ifdef USE_HAL_DRIVER
   NVIC_DisableIRQ(STEP_PULSE_IRQ);
+#endif
 
   busy = false;
 
@@ -346,16 +433,55 @@ void st_go_idle()
 // int8 variables and update position counters only when a segment completes. This can get complicated
 // with probing and homing cycles that require true real-time positions.
 
+#ifdef USE_HAL_DRIVER
 void grbl_STEP_PULSE_TIMER_IRQHandler(void)
+#endif
+#ifdef STM32F103C8
+void TIM2_IRQHandler(void)
+#endif
+#ifdef AVRTARGET
+ISR(TIMER1_COMPA_vect)
+#endif
+#ifdef WIN32
+void Timer1Proc()
+#endif
 {
-  if (busy) { return; } // The busy-flag is used to avoid reentering this interrupt
+#ifdef USE_HAL_DRIVER
+	if ((STEP_PULSE_TIMER->SR & 0x0001) != 0)                  // check interrupt source
+	{
+		STEP_PULSE_TIMER->SR &= ~(1 << 0);                          // clear UIF flag
+		STEP_PULSE_TIMER->CNT = 0;
+	}
+	else
+	{
+		return;
+	}
+#endif
+#ifdef STM32F103C8
+	if ((TIM2->SR & 0x0001) != 0)                  // check interrupt source
+	{
+		TIM2->SR &= ~(1 << 0);                          // clear UIF flag
+		TIM2->CNT = 0;
+	}
+	else
+	{
+		return;
+	}
+#endif
 
+  if (busy) { return; } // The busy-flag is used to avoid reentering this interrupt
+#ifdef AVRTARGET
+  // Set the direction pins a couple of nanoseconds before we step the steppers
+  DIRECTION_PORT = (DIRECTION_PORT & ~DIRECTION_MASK) | (st.dir_outbits & DIRECTION_MASK);
+#endif
 #ifdef STM32F103C8
   GPIO_Write(DIRECTION_PORT, (GPIO_ReadOutputData(DIRECTION_PORT) & ~DIRECTION_MASK) | (st.dir_outbits & DIRECTION_MASK));
   TIM_ClearITPendingBit(TIM3, TIM_IT_Update);
 #endif
 #ifdef USE_HAL_DRIVER
   GPIO_Write(DIRECTION_PORT, (GPIO_ReadOutputData(DIRECTION_PORT) & ~DIRECTION_MASK) | (st.dir_outbits & DIRECTION_MASK));
+  NVIC_DisableIRQ(WIDTH_IRQ);
+
 #endif
 
   // Then pulse the stepping pins
@@ -375,11 +501,26 @@ void grbl_STEP_PULSE_TIMER_IRQHandler(void)
 
   // Enable step pulse reset timer so that The Stepper Port Reset Interrupt can reset the signal after
   // exactly settings.pulse_microseconds microseconds, independent of the main Timer1 prescaler.
+#ifdef AVRTARGET
+  TCNT0 = st.step_pulse_time; // Reload Timer0 counter
+  TCCR0B = (1<<CS01); // Begin Timer0. Full speed, 1/8 prescaler
+#endif
+#ifdef WIN32
+  nTimer0Out = st.step_pulse_time;
+#endif
+#ifdef STM32F103C8
+  NVIC_EnableIRQ(TIM3_IRQn);
+#endif
 #ifdef USE_HAL_DRIVER
   NVIC_EnableIRQ(WIDTH_IRQ);
 #endif
 
   busy = true;
+#ifdef AVRTARGET
+  sei(); // Re-enable interrupts to allow Stepper Port Reset Interrupt to fire on-time.
+         // NOTE: The remaining code in this ISR will finish before returning to main program.
+#endif
+
   // If there is no step segment, attempt to pop one from the stepper buffer
   if (st.exec_segment == NULL) {
     // Anything in the buffer? If so, load and initialize next step segment.
@@ -387,12 +528,37 @@ void grbl_STEP_PULSE_TIMER_IRQHandler(void)
       // Initialize new step segment and load number of steps to execute
       st.exec_segment = &segment_buffer[segment_buffer_tail];
 
-      // Initialize step segment timing per step and load number of steps to execute.
+      #ifndef ADAPTIVE_MULTI_AXIS_STEP_SMOOTHING
+        // With AMASS is disabled, set timer prescaler for segments with slow step frequencies (< 250Hz).
+#ifdef AVRTARGET
+        TCCR1B = (TCCR1B & ~(0x07<<CS10)) | (st.exec_segment->prescaler<<CS10);
+#endif
+      #endif
 
+      // Initialize step segment timing per step and load number of steps to execute.
+#ifdef AVRTARGET
+      OCR1A = st.exec_segment->cycles_per_tick;
+#endif
+#ifdef WIN32
+#ifndef ADAPTIVE_MULTI_AXIS_STEP_SMOOTHING
+	  nTimer1Out = st.exec_segment->cycles_per_tick * (st.exec_segment->prescaler + 1);
+#else
+	  nTimer1Out = st.exec_segment->cycles_per_tick;
+#endif
+#endif
+#ifdef STM32F103C8
+	  TIM2->ARR = st.exec_segment->cycles_per_tick - 1;
+	  /* Set the Autoreload value */
+#ifndef ADAPTIVE_MULTI_AXIS_STEP_SMOOTHING        
+	  TIM2->PSC = st.exec_segment->prescaler;
+#endif
+#endif
+#ifdef USE_HAL_DRIVER
 	  WIDTH_TIMER->ARR = st.exec_segment->cycles_per_tick - 1;
 	  /* Set the Autoreload value */
 #ifndef ADAPTIVE_MULTI_AXIS_STEP_SMOOTHING
 	  WIDTH_TIMER->PSC = st.exec_segment->prescaler;
+#endif
 #endif
       st.step_count = st.exec_segment->n_step; // NOTE: Can sometimes be zero when moving slow.
       // If the new segment starts a new planner block, initialize stepper variables and counters.
@@ -443,18 +609,20 @@ void grbl_STEP_PULSE_TIMER_IRQHandler(void)
   #else
     st.counter_x += st.exec_block->steps[X_AXIS];
   #endif
-  if (st.counter_x > st.exec_block->step_event_count)
-  {
+  if (st.counter_x > st.exec_block->step_event_count) {
+#ifndef USE_HAL_DRIVER
+    st.step_outbits |= (1<<X_STEP_BIT);
+#else
     st.step_outbits |= X_STEP_BIT;
+#endif
+
     st.counter_x -= st.exec_block->step_event_count;
-    if (st.exec_block->direction_bits & X_DIRECTION_BIT)
-    {
-    	sys_position[X_AXIS]--;
-    }
-    else
-    {
-    	sys_position[X_AXIS]++;
-    }
+#ifndef USE_HAL_DRIVER
+    if (st.exec_block->direction_bits & (1<<X_DIRECTION_BIT)) { sys_position[X_AXIS]--; }
+#else
+    if (st.exec_block->direction_bits & X_DIRECTION_BIT) { sys_position[X_AXIS]--; }
+#endif
+    else { sys_position[X_AXIS]++; }
   }
   #ifdef ADAPTIVE_MULTI_AXIS_STEP_SMOOTHING
     st.counter_y += st.steps[Y_AXIS];
@@ -462,9 +630,17 @@ void grbl_STEP_PULSE_TIMER_IRQHandler(void)
     st.counter_y += st.exec_block->steps[Y_AXIS];
   #endif
   if (st.counter_y > st.exec_block->step_event_count) {
+#ifndef USE_HAL_DRIVER
+    st.step_outbits |= (1<<Y_STEP_BIT);
+#else
     st.step_outbits |= Y_STEP_BIT;
+#endif
     st.counter_y -= st.exec_block->step_event_count;
+#ifndef USE_HAL_DRIVER
+    if (st.exec_block->direction_bits & (1<<Y_DIRECTION_BIT)) { sys_position[Y_AXIS]--; }
+#else
     if (st.exec_block->direction_bits & Y_DIRECTION_BIT) { sys_position[Y_AXIS]--; }
+#endif
     else { sys_position[Y_AXIS]++; }
   }
   #ifdef ADAPTIVE_MULTI_AXIS_STEP_SMOOTHING
@@ -472,18 +648,19 @@ void grbl_STEP_PULSE_TIMER_IRQHandler(void)
   #else
     st.counter_z += st.exec_block->steps[Z_AXIS];
   #endif
-  if (st.counter_z > st.exec_block->step_event_count)
-  {
+  if (st.counter_z > st.exec_block->step_event_count) {
+#ifndef USE_HAL_DRIVER
+    st.step_outbits |= (1<<Z_STEP_BIT);
+#else
     st.step_outbits |= Z_STEP_BIT;
+#endif
     st.counter_z -= st.exec_block->step_event_count;
-    if (st.exec_block->direction_bits & Z_DIRECTION_BIT)
-    {
-    	sys_position[Z_AXIS]--;
-    }
-    else
-    {
-    	sys_position[Z_AXIS]++;
-    }
+#ifndef USE_HAL_DRIVER
+    if (st.exec_block->direction_bits & (1<<Z_DIRECTION_BIT)) { sys_position[Z_AXIS]--; }
+#else
+    if (st.exec_block->direction_bits & Z_DIRECTION_BIT) { sys_position[Z_AXIS]--; }
+#endif
+    else { sys_position[Z_AXIS]++; }
   }
 
   // During a homing cycle, lock out and prevent desired axes from moving.
